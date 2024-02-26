@@ -1,5 +1,5 @@
 const loadPost = require("../misc/post_body");
-const movie = require("./main");
+const character = require("./main");
 const http = require("http");
 
 /**
@@ -9,14 +9,29 @@ const http = require("http");
  * @returns {boolean}
  */
 module.exports = function (req, res, url) {
-	if (req.method != "POST" || url.path != "/goapi/saveMovie/") return;
-	loadPost(req, res).then(([data, mId]) => {
-		const trigAutosave = data.is_triggered_by_autosave;
-		if (trigAutosave && (!data.movieId || data.noAutosave)) return res.end("0");
+	if (req.method == "POST")
+		switch (url.pathname) {
+			case "/goapi/saveCCCharacter/":
+				loadPost(req, res).then(([data]) =>
+					character
+						.save(Buffer.from(data.body))
+						.then((id) => {
+							var thumb = Buffer.from(data.thumbdata, "base64");
+							character.saveThumb(thumb, id);
+							res.end(`0${id}`);
+						})
+						.catch(() => res.end(`10`))
+				);
+				return true;
 
-		var body = Buffer.from(data.body_zip, "base64");
-		var thumb = data.thumbnail_large && Buffer.from(data.thumbnail_large, "base64");
-		movie.save(body, thumb, mId, data.presaveId).then((nId) => res.end("0" + nId));
-	});
-	return true;
+			case "/goapi/saveCCThumbs/":
+				loadPost(req, res).then(([data]) => {
+					var id = data.assetId;
+					var thumb = Buffer.from(data.thumbdata, "base64");
+					character.saveThumb(thumb, id);
+					res.end(`0${id}`);
+				});
+				return true;
+		}
+	return;
 };
