@@ -8,7 +8,13 @@ const http = require("http");
  * @returns {boolean}
  */
 module.exports = function (req, res, url) {
-	if (req.method != "GET" || url.pathname != "/movieList") return;
-	Promise.all(movie.list().map(movie.meta)).then((a) => res.end(JSON.stringify(a)));
+	if (req.method != "GET" || !url.pathname.startsWith("/meta")) return;
+	movie
+		.meta(url.path.substr(url.path.lastIndexOf("/") + 1))
+		.then((v) => res.end(JSON.stringify(v)))
+		.catch(() => {
+			res.statusCode = 404;
+			res.end();
+		});
 	return true;
 };

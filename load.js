@@ -1,6 +1,5 @@
-const loadPost = require("../misc/post_body");
-const folder = process.env.THEME_FOLDER;
-const fUtil = require("../misc/file");
+const movie = require("./main");
+const base = Buffer.alloc(1, 0);
 const http = require("http");
 
 /**
@@ -10,16 +9,53 @@ const http = require("http");
  * @returns {boolean}
  */
 module.exports = function (req, res, url) {
-	if (req.method != "POST" || url.path != "/goapi/getTheme/") return;
-	loadPost(req, res).then(([data]) => {
-		var theme = data.themeId;
-		switch (theme) {
-			case "family":
-				theme = "custom";
-				break;
+	switch (req.method) {
+		case "GET": {
+			const match = req.url.match(/\/movies\/([^.]+)(?:\.(zip|xml))?$/);
+			if (!match) return;
+
+			var id = match[1];
+			var ext = match[2];
+			switch (ext) {
+				case "zip":
+					res.setHeader("Content-Type", "application/zip");
+					movie.loadZip(id).then((v) => {
+						if (v) {
+							res.statusCode = 200;
+							res.end(v);
+						} else {
+							res.statusCode = 404;
+							res.end();
+						}
+					});
+					break;
+				default:
+					res.setHeader("Content-Type", "text/xml");
+					movie.loadXml(id).then((v) => {
+						if (v) {
+							res.statusCode = 200;
+							res.end(v);
+						} else {
+							res.statusCode = 404;
+							res.end();
+						}
+					});
+					break;
+			}
+			return true;
 		}
-		res.setHeader("Content-Type", "application/zip");
-		fUtil.makeZip(`${folder}/${theme}.xml`, "theme.xml").then((b) => res.end(b));
-	});
-	return true;
+
+		case "POST": {
+			if (!url.path.startsWith("/goapi/getMovie/")) return;
+			res.setHeader("Content-Type", "application/zip");
+
+			movie
+				.loadZip(url.query.movieId)
+				.then((b) => res.end(Buffer.concat([base, b])))
+				.catch(() => res.end("1"));
+			return true;
+		}
+		default:
+			return;
+	}
 };

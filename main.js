@@ -1,274 +1,158 @@
-const voices = require("./info").voices;
-const qs = require("querystring");
-const brotli = require("brotli");
-const https = require("https");
-const md5 = require("js-md5");
-const http = require("http");
+const exFolder = process.env.EXAMPLE_FOLDER;
+const caché = require("../asset/caché");
+const fUtil = require("../misc/file");
+const nodezip = require("node-zip");
+const parse = require("./parse");
+const fs = require("fs");
 
-// Fallback option for compatibility between Wrapper and https://github.com/Windows81/Text2Speech-Haxxor-JS.
-let get;
-try {
-	get = require("../misc/get");
-} catch {
-	get = require("./get");
-}
-
-module.exports = (voiceName, text) => {
-	return new Promise(async (res, rej) => {
-		const voice = voices[voiceName];
-		switch (voice.source) {
-			case "nextup": {
-				https.get("https://nextup.com/ivona/index.html", (r) => {
-					var q = qs.encode({
-						voice: voice.arg,
-						language: `${voice.language}-${voice.country}`,
-						text: text,
-					});
-					var buffers = [];
-					https.get(`https://nextup.com/ivona/php/nextup-polly/CreateSpeech/CreateSpeechGet3.php?${q}`, (r) => {
-						r.on("data", (d) => buffers.push(d));
-						r.on("end", () => {
-							const loc = Buffer.concat(buffers).toString();
-							if (!loc.startsWith("http")) rej();
-							get(loc).then(res).catch(rej);
-						});
-						r.on("error", rej);
-					});
-				});
-				break;
-			}
-			case "polly": {
-				var buffers = [];
-				var req = https.request(
-					{
-						hostname: "pollyvoices.com",
-						port: "443",
-						path: "/api/sound/add",
-						method: "POST",
-						headers: {
-							"Content-Type": "application/x-www-form-urlencoded",
-						},
-					},
-					(r) => {
-						r.on("data", (b) => buffers.push(b));
-						r.on("end", () => {
-							var json = JSON.parse(Buffer.concat(buffers));
-							if (json.file) get(`https://pollyvoices.com${json.file}`).then(res);
-							else rej();
-						});
-					}
-				);
-				req.write(qs.encode({ text: text, voice: voice.arg }));
-				req.end();
-				break;
-			}
-			 case "cepstral": {
-                https.get('https://www.cepstral.com/en/demos', r => {
-                    const cookie = r.headers['set-cookie'];
-                    var q = qs.encode({
-                        voice: voice.arg,
-                        voiceText: text,
-                        rate: 170,
-                        pitch: 1,
-                        sfx: 'none',
-                    });
-                    var buffers = [];
-                    var req = https.get({
-                        host: 'www.cepstral.com',
-                        path: `/demos/createAudio.php?${q}`,
-                        headers: { Cookie: cookie },
-                        method: 'GET',
-                    }, r => {
-                        r.on('data', b => buffers.push(b));
-                        r.on('end', () => {
-                            var json = JSON.parse(Buffer.concat(buffers));
-                            get(`https://www.cepstral.com${json.mp3_loc}`).then(res).catch(rej);
-                        })
-                    });
-                });
-                break;
-            }
-         case "cepstralfast": {
-                https.get('https://www.cepstral.com/en/demos', r => {
-                    const cookie = r.headers['set-cookie'];
-                    var q = qs.encode({
-                        voice: voice.arg,
-                        voiceText: text,
-                        rate: 170,
-                        pitch: 4.2,
-                        sfx: 'none',
-                    });
-                    var buffers = [];
-                    var req = https.get({
-                        host: 'www.cepstral.com',
-                        path: `/demos/createAudio.php?${q}`,
-                        headers: { Cookie: cookie },
-                        method: 'GET',
-                    }, r => {
-                        r.on('data', b => buffers.push(b));
-                        r.on('end', () => {
-                            var json = JSON.parse(Buffer.concat(buffers));
-                            get(`https://www.cepstral.com${json.mp3_loc}`).then(res).catch(rej);
-                        })
-                    });
-                });
-                break;
-            }
-			case "voiceforge": {
-				console.log("user used voiceforge voice");
-			}
-			case "vocalware": {
-				var [eid, lid, vid] = voice.arg;
-				var cs = md5(`${eid}${lid}${vid}${text}1mp35883747uetivb9tb8108wfj`);
-				var q = qs.encode({
-					EID: voice.arg[0],
-					LID: voice.arg[1],
-					VID: voice.arg[2],
-					TXT: text,
-					EXT: "mp3",
-					IS_UTF8: 1,
-					ACC: 5883747,
-					cache_flag: 3,
-					CS: cs,
-				});
-				var req = https.get(
-					{
-						host: "cache-a.oddcast.com",
-						path: `/tts/gen.php?${q}`,
-						headers: {
-							Referer: "https://www.oddcast.com/",
-							Origin: "https://www.oddcast.com/",
-							"User-Agent":
-								"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/75.0.3770.100 Safari/537.36",
-						},
-					},
-					(r) => {
-						var buffers = [];
-						r.on("data", (d) => buffers.push(d));
-						r.on("end", () => res(Buffer.concat(buffers)));
-						r.on("error", rej);
-					}
-				);
-				break;
-			}
-			case "voicery": {
-				 console.log("Voicery shut down in 2020. Voices will be removed soon.");
-			}
-			case "watson": {
-				var q = qs.encode({
-					text: text,
-					voice: voice.arg,
-					download: true,
-					accept: "audio/mp3",
-				});
-				https.get(
-					{
-						host: "text-to-speech-demo.ng.bluemix.net",
-						path: `/api/v1/synthesize?${q}`,
-					},
-					(r) => {
-						var buffers = [];
-						r.on("data", (d) => buffers.push(d));
-						r.on("end", () => res(Buffer.concat(buffers)));
-						r.on("error", rej);
-					}
-				);
-				break;
-			}
-			case "acapela": {
-					console.log("acapela voice has been used by user")
-				}
-			case "readloud": {
-				const req = https.request(
-					{
-						host: "readloud.net",
-						path: voice.arg,
-						method: "POST",
-						port: "443",
-						headers: {
-							"Content-Type": "application/x-www-form-urlencoded",
-						},
-					},
-					(r) => {
-						var buffers = [];
-						r.on("data", (d) => buffers.push(d));
-						r.on("end", () => {
-							const html = Buffer.concat(buffers);
-							const beg = html.indexOf("/tmp/");
-							const end = html.indexOf(".mp3", beg) + 4;
-							const sub = html.subarray(beg, end).toString();
-							const loc = `https://readloud.net${sub}`;
-							get(loc).then(res).catch(rej);
-						});
-						r.on("error", rej);
-					}
-				);
-				req.end(
-					qs.encode({
-						but1: text,
-						but: "Enviar",
-					})
-				);
-				break;
-			}
-        
-        case "svox": {
-				var q = qs.encode({
-					apikey: "e3a4477c01b482ea5acc6ed03b1f419f",
-					action: "convert",
-					format: "mp3",
-					voice: voice.arg,
-					speed: 0,
-					text: text,
-					version: "0.2.99",
-				});
-				https.get(
-					{
-						host: "api.ispeech.org",
-						path: `/api/rest?${q}`,
-					},
-					(r) => {
-						var buffers = [];
-						r.on("data", (d) => buffers.push(d));
-						r.on("end", () => res(Buffer.concat(buffers)));
-						r.on("error", rej);
-					}
-				);
-				break;
-			}
-			case "cereproc": {
-				const req = https.request(
-					{
-						hostname: "www.cereproc.com",
-						path: "/themes/benchpress/livedemo.php",
-						method: "POST",
-						headers: {
-							"content-type": "text/xml",
-							"accept-encoding": "gzip, deflate, br",
-							origin: "https://www.cereproc.com",
-							referer: "https://www.cereproc.com/en/products/voices",
-							"x-requested-with": "XMLHttpRequest",
-							cookie: "Drupal.visitor.liveDemo=666",
-						},
-					},
-					(r) => {
-						var buffers = [];
-						r.on("data", (d) => buffers.push(d));
-						r.on("end", () => {
-							const xml = String.fromCharCode.apply(null, brotli.decompress(Buffer.concat(buffers)));
-							const beg = xml.indexOf("https://cerevoice.s3.amazonaws.com/");
-							const end = xml.indexOf(".mp3", beg) + 4;
-							const loc = xml.substr(beg, end - beg).toString();
-							get(loc).then(res).catch(rej);
-						});
-						r.on("error", rej);
-					}
-				);
-				req.end(
-					`<speakExtended key='666'><voice>${voice.arg}</voice><text>${text}</text><audioFormat>mp3</audioFormat></speakExtended>`
-				);
-				break;
-			}
+module.exports = {
+	/**
+	 *
+	 * @param {Buffer} movieZip
+	 * @param {string} nëwId
+	 * @param {string} oldId
+	 * @returns {Promise<string>}
+	 */
+	save(movieZip, thumb, oldId, nëwId = oldId) {
+		// Saves the thumbnail of the respective video.
+		if (thumb && nëwId.startsWith("m-")) {
+			const n = Number.parseInt(nëwId.substr(2));
+			const thumbFile = fUtil.getFileIndex("thumb-", ".png", n);
+			fs.writeFileSync(thumbFile, thumb);
 		}
-	});
+
+		return new Promise(async (res, rej) => {
+			caché.transfer(oldId, nëwId);
+			var i = nëwId.indexOf("-");
+			var prefix = nëwId.substr(0, i);
+			var suffix = nëwId.substr(i + 1);
+			var zip = nodezip.unzip(movieZip);
+			switch (prefix) {
+				case "m": {
+					var path = fUtil.getFileIndex("movie-", ".xml", suffix);
+					var writeStream = fs.createWriteStream(path);
+					var assetBuffers = caché.loadTable(nëwId);
+					parse.unpackMovie(zip, thumb, assetBuffers).then((data) => {
+						writeStream.write(data, () => {
+							writeStream.close();
+							res(nëwId);
+						});
+					});
+					break;
+				}
+				default:
+					rej();
+			}
+		});
+	},
+	loadZip(mId) {
+		return new Promise((res) => {
+			const i = mId.indexOf("-");
+			const prefix = mId.substr(0, i);
+			const suffix = mId.substr(i + 1);
+			switch (prefix) {
+				case "e": {
+					caché.clearTable(mId);
+					let data = fs.readFileSync(`${exFolder}/${suffix}.zip`);
+					res(data.subarray(data.indexOf(80)));
+					break;
+				}
+				case "m": {
+					let numId = Number.parseInt(suffix);
+					if (isNaN(numId)) res();
+					let filePath = fUtil.getFileIndex("movie-", ".xml", numId);
+					if (!fs.existsSync(filePath)) res();
+
+					const buffer = fs.readFileSync(filePath);
+					if (!buffer || buffer.length == 0) res();
+
+					try {
+						parse.packMovie(buffer, mId).then((pack) => {
+							caché.saveTable(mId, pack.caché);
+							res(pack.zipBuf);
+						});
+						break;
+					} catch (e) {
+						res();
+					}
+				}
+				default:
+					res();
+			}
+		});
+	},
+	loadXml(movieId) {
+		return new Promise(async (res, rej) => {
+			const i = movieId.indexOf("-");
+			const prefix = movieId.substr(0, i);
+			const suffix = movieId.substr(i + 1);
+			switch (prefix) {
+				case "m": {
+					const fn = fUtil.getFileIndex("movie-", ".xml", suffix);
+					if (fs.existsSync(fn)) res(fs.readFileSync(fn));
+					else rej();
+					break;
+				}
+				case "e": {
+					const fn = `${exFolder}/${suffix}.zip`;
+					if (!fs.existsSync(fn)) return rej();
+					parse
+						.unpackMovie(nodezip.unzip(fn))
+						.then((v) => res(v))
+						.catch((e) => rej(e));
+					break;
+				}
+				default:
+					rej();
+			}
+		});
+	},
+	loadThumb(movieId) {
+		return new Promise(async (res, rej) => {
+			if (!movieId.startsWith("m-")) return;
+			const n = Number.parseInt(movieId.substr(2));
+			const fn = fUtil.getFileIndex("thumb-", ".png", n);
+			isNaN(n) ? rej() : res(fs.readFileSync(fn));
+		});
+	},
+	list() {
+		const array = [];
+		const last = fUtil.getLastFileIndex("movie-", ".xml");
+		for (let c = last; c >= 0; c--) {
+			const movie = fs.existsSync(fUtil.getFileIndex("movie-", ".xml", c));
+			const thumb = fs.existsSync(fUtil.getFileIndex("thumb-", ".png", c));
+			if (movie && thumb) array.push(`m-${c}`);
+		}
+		return array;
+	},
+	meta(movieId) {
+		return new Promise(async (res, rej) => {
+			if (!movieId.startsWith("m-")) return;
+			const n = Number.parseInt(movieId.substr(2));
+			const fn = fUtil.getFileIndex("movie-", ".xml", n);
+
+			const fd = fs.openSync(fn, "r");
+			const buffer = Buffer.alloc(256);
+			fs.readSync(fd, buffer, 0, 256, 0);
+			const begTitle = buffer.indexOf("<title>") + 16;
+			const endTitle = buffer.indexOf("]]></title>");
+			const title = buffer.slice(begTitle, endTitle).toString().trim();
+
+			const begDuration = buffer.indexOf('duration="') + 10;
+			const endDuration = buffer.indexOf('"', begDuration);
+			const duration = Number.parseFloat(buffer.slice(begDuration, endDuration));
+			const min = ("" + ~~(duration / 60)).padStart(2, "0");
+			const sec = ("" + ~~(duration % 60)).padStart(2, "0");
+			const durationStr = `${min}:${sec}`;
+
+			fs.closeSync(fd);
+			res({
+				date: fs.statSync(fn).mtime,
+				durationString: durationStr,
+				duration: duration,
+				title: title,
+				id: movieId,
+			});
+		});
+	},
 };
